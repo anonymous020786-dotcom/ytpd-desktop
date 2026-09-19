@@ -1,0 +1,56 @@
+{
+  "name": "ytpd-desktop",
+  "productName": "Playlist Grabber",
+  "version": "1.0.0",
+  "description": "Desktop app for downloading YouTube playlists, channels, and videos",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare:resources": "node scripts/prepare-resources.mjs",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && npm run prepare:resources && electron-builder"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "playwright-core": "^1.63.0",
+    "typescript": "^5.7.2"
+  },
+  "build": {
+    "appId": "com.playlistgrabber.desktop",
+    "productName": "Playlist Grabber",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/backend-win",
+        "to": "backend"
+      },
+      {
+        "from": "resources/frontend",
+        "to": "frontend"
+      },
+      {
+        "from": "resources/ffmpeg",
+        "to": "ffmpeg"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
