@@ -5,10 +5,22 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const desktopRoot = path.join(__dirname, "..");
-const repoRoot = path.join(desktopRoot, "..");
-const backendProj = path.join(repoRoot, "backend", "YtpdWeb.Api");
-const frontendRoot = path.join(repoRoot, "frontend");
+// ytpd-web is a separate (private) repo - clone it as a sibling of this one,
+// or point YTPD_WEB_REPO_PATH at wherever you put it.
+const webRepoRoot = process.env.YTPD_WEB_REPO_PATH
+  ? path.resolve(process.env.YTPD_WEB_REPO_PATH)
+  : path.join(desktopRoot, "..", "ytpd-web");
+const backendProj = path.join(webRepoRoot, "backend", "YtpdWeb.Api");
+const frontendRoot = path.join(webRepoRoot, "frontend");
 const resourcesRoot = path.join(desktopRoot, "resources");
+
+if (!existsSync(backendProj) || !existsSync(frontendRoot)) {
+  throw new Error(
+    `Could not find the ytpd-web repo's backend/frontend under "${webRepoRoot}". ` +
+      "Clone https://github.com/anonymous020786-dotcom/ytpd-web as a sibling of this repo, " +
+      "or set YTPD_WEB_REPO_PATH to point at it."
+  );
+}
 
 console.log("== Publishing backend (self-contained win-x64) ==");
 const backendOut = path.join(resourcesRoot, "backend-win");

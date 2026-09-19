@@ -1,13 +1,23 @@
 # Playlist Grabber — Desktop
 
-A native Windows (and eventually macOS/Linux) desktop build of [Playlist Grabber](../README.md), wrapping the same ASP.NET Core backend and Next.js frontend from this repo in an Electron shell instead of a browser tab.
+A native Windows (and eventually macOS/Linux) desktop build of Playlist Grabber, wrapping the same ASP.NET Core backend and Next.js frontend from the (separate, private) [ytpd-web](https://github.com/anonymous020786-dotcom/ytpd-web) repo in an Electron shell instead of a browser tab.
+
+This repo is deliberately just the native wrapper — window, packaging, sidecar orchestration. The actual download engine (YoutubeExplode/ffmpeg/TagLib# backend, the React UI) lives in `ytpd-web` and isn't duplicated here. To build this, clone `ytpd-web` as a **sibling directory** of this one:
+
+```
+some-folder/
+  ytpd-web/     <- backend/ and frontend/ live here (private repo)
+  ytpd-desktop/ <- this repo
+```
+
+`scripts/prepare-resources.mjs` reaches across to `../ytpd-web/backend` and `../ytpd-web/frontend` to publish/build them into this project's `resources/` folder before packaging. Cloned it somewhere else? Set `YTPD_WEB_REPO_PATH` to point at it instead.
 
 ## How it works
 
 Electron's main process spawns two local "sidecar" processes bound to `127.0.0.1` on fixed ports, waits for both to come up, then opens a window pointed at the frontend:
 
-- **Backend** (`127.0.0.1:47391`) — the same `YtpdWeb.Api` from `../backend`, published as a self-contained single-file `.exe` (no .NET runtime install required). Runs with `Auth:LocalMode=true`, which enables an unauthenticated `/api/auth/local-token` endpoint — safe only because this process never binds to anything but loopback. The frontend auto-detects it's running inside Electron (via a `contextBridge`-exposed `window.electronAPI`) and calls that endpoint on launch instead of showing a login screen.
-- **Frontend** (`127.0.0.1:47392`) — the same Next.js app from `../frontend`, built with `output: "standalone"` and its `NEXT_PUBLIC_API_URL` baked in at build time to the fixed backend port above (which is why the port is fixed rather than dynamically chosen — a browser client env var can't be changed after the fact). Hosted by running Electron's own binary in plain-Node mode (`ELECTRON_RUN_AS_NODE=1`) against the standalone `server.js`, so no separate Node.js runtime needs bundling either.
+- **Backend** (`127.0.0.1:47391`) — the same `YtpdWeb.Api` from `ytpd-web/backend`, published as a self-contained single-file `.exe` (no .NET runtime install required). Runs with `Auth:LocalMode=true`, which enables an unauthenticated `/api/auth/local-token` endpoint — safe only because this process never binds to anything but loopback. The frontend auto-detects it's running inside Electron (via a `contextBridge`-exposed `window.electronAPI`) and calls that endpoint on launch instead of showing a login screen.
+- **Frontend** (`127.0.0.1:47392`) — the same Next.js app from `ytpd-web/frontend`, built with `output: "standalone"` and its `NEXT_PUBLIC_API_URL` baked in at build time to the fixed backend port above (which is why the port is fixed rather than dynamically chosen — a browser client env var can't be changed after the fact). Hosted by running Electron's own binary in plain-Node mode (`ELECTRON_RUN_AS_NODE=1`) against the standalone `server.js`, so no separate Node.js runtime needs bundling either.
 - **ffmpeg** — bundled as a plain binary and pointed to via `Ffmpeg:Path`, since the desktop build can't rely on it being on the end user's `PATH`.
 
 All persistent data (SQLite job history, temp download files, the chosen downloads folder, a per-install JWT secret) lives under Electron's `userData` directory, except the downloads folder itself, which defaults to `~/Downloads/Playlist Grabber` and can be changed from the navbar (native folder picker) — picking a new one restarts just the backend sidecar with the new path.
