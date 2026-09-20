@@ -2,7 +2,7 @@
 
 A native Windows/macOS/Linux desktop build of Playlist Grabber, wrapping the same ASP.NET Core backend and Next.js frontend from the (separate, private) [ytpd-web](https://github.com/anonymous020786-dotcom/ytpd-web) repo in an Electron shell instead of a browser tab.
 
-**Download:** [Releases](https://github.com/anonymous020786-dotcom/ytpd-desktop/releases) — Windows installer is live; macOS/Linux build via CI (see below).
+**Download:** [Releases](https://github.com/anonymous020786-dotcom/ytpd-desktop/releases) — Windows, macOS (Apple Silicon), and Linux all build and publish automatically via CI on every tagged release.
 
 This repo is deliberately just the native wrapper — window, packaging, sidecar orchestration. The actual download engine (YoutubeExplode/ffmpeg/TagLib# backend, the React UI) lives in `ytpd-web` and isn't duplicated here. To build this, clone `ytpd-web` as a **sibling directory** of this one:
 
@@ -57,7 +57,7 @@ Confirmed firsthand, not a guess: AppImage's packaging tool (`mksquashfs`) is a 
 
 ### CI: `.github/workflows/release.yml`
 
-Builds Windows, macOS, and Linux each on their native GitHub-hosted runner, and publishes all three installers to this repo's Releases. Triggers on pushing a tag like `v1.2.3` (or manually from the Actions tab).
+Builds Windows, macOS (Apple Silicon), and Linux each on their native GitHub-hosted runner, and publishes all three installers to this repo's Releases. Triggers on pushing a tag like `v1.2.3` (or manually from the Actions tab). A 25-minute per-job timeout guards against a runner queue never allocating (see the Intel Mac note below — this actually happened once).
 
 **One-time setup:** add a repository secret named `YTPD_WEB_PAT` — a fine-grained GitHub PAT with read-only **Contents** access to the private `ytpd-web` repo (Settings → Secrets and variables → Actions → New repository secret). The workflow checks that repo out as a sibling directory to reach its backend/frontend, the same as building locally.
 
@@ -87,5 +87,6 @@ scripts/
 ## What's not in this build yet
 
 - **Code signing on any platform** — this is a real, unavoidable blocker, not a to-do I can just code: Windows needs a paid code-signing certificate (~$200-500/yr from a CA), and macOS needs an Apple Developer Program membership ($99/yr) for `codesign`/notarization. Both require your own identity/payment; until then, Windows shows an "unknown publisher" SmartScreen prompt and macOS needs a Gatekeeper right-click-to-open bypass.
+- **Intel Mac (`osx-x64`)** — the code and `prepare-resources.mjs` support it (`YTPD_PLATFORMS=osx-x64`, `YTPD_FFMPEG_OSX_X64`), but it's deliberately not in CI: a `macos-13` job sat queued for 27+ minutes with zero runner ever allocated before being cancelled — GitHub's Intel Mac fleet appears to be effectively unavailable now. Build it manually on real Intel Mac hardware with `npm run dist:mac` if it's ever needed (that script publishes both `osx-arm64` and `osx-x64` when the corresponding `YTPD_FFMPEG_*` vars are set).
 - Linux `.deb`/`.rpm` targets (only AppImage right now)
 - macOS/Linux builds are produced by CI only — I have no way to execute or visually verify an ELF or Mach-O binary from this Windows machine. Windows builds are the only ones I've actually run and screenshotted; Mac/Linux correctness rests on the build succeeding cleanly and the code being platform-generic (same sidecar/IPC logic, no OS-specific branches beyond paths and binary names).

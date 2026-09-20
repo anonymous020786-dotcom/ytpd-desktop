@@ -34,11 +34,15 @@ jobs:
             platforms: win
           - os: macos-latest
             platforms: osx-arm64
-          - os: macos-13
-            platforms: osx-x64
           - os: ubuntu-latest
             platforms: linux
+          # Intel Mac (macos-13, osx-x64) deliberately omitted: tried it once,
+          # the job sat queued for 27+ minutes with zero runner ever
+          # allocated (GitHub's Intel Mac fleet is being phased out) and had
+          # to be cancelled. Build it manually on real Intel hardware if ever
+          # needed - see README.
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
     steps:
       - name: Checkout ytpd-desktop
         uses: actions/checkout@v4
