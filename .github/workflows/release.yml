@@ -1,0 +1,103 @@
+name: Release desktop builds
+
+# Builds Windows, macOS, and Linux installers, each on its own native
+# runner - AppImage (Linux) and dmg/pkg signing (Mac) tooling genuinely
+# cannot run cross-platform (confirmed: mksquashfs is a Linux ELF binary,
+# codesign/hdiutil are macOS-only), so this replaces trying to cross-build
+# everything from one machine.
+#
+# One-time setup required (repo owner):
+#   Settings -> Secrets and variables -> Actions -> New repository secret
+#   Name: YTPD_WEB_PAT
+#   Value: a fine-grained PAT with read-only "Contents" access to the
+#   private anonymous020786-dotcom/ytpd-web repo (this workflow checks it
+#   out as a sibling directory, since that's where backend/frontend live).
+#
+# Triggers on pushing a tag like v1.2.3, or manually via Actions tab.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platforms: win
+          - os: macos-latest
+            platforms: osx-arm64
+          - os: ubuntu-latest
+            platforms: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout ytpd-desktop
+        uses: actions/checkout@v4
+        with:
+          path: ytpd-desktop
+
+      - name: Checkout ytpd-web (private, sibling dir)
+        uses: actions/checkout@v4
+        with:
+          repository: anonymous020786-dotcom/ytpd-web
+          token: ${{ secrets.YTPD_WEB_PAT }}
+          path: ytpd-web
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # Each OS resolves its own static ffmpeg differently, then exports the
+      # matching YTPD_FFMPEG_* var prepare-resources.mjs expects.
+      - name: Install ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install ffmpeg -y
+          echo "YTPD_FFMPEG_WIN=$((Get-Command ffmpeg).Source)" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Install ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ffmpeg
+          echo "YTPD_FFMPEG_OSX_ARM64=$(which ffmpeg)" >> "$GITHUB_ENV"
+
+      - name: Install ffmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          echo "YTPD_FFMPEG_LINUX=$(which ffmpeg)" >> "$GITHUB_ENV"
+
+      - name: Install desktop dependencies
+        working-directory: ytpd-desktop
+        run: npm ci
+
+      - name: Build TypeScript
+        working-directory: ytpd-desktop
+        run: npm run build
+
+      - name: Prepare resources (publish backend, build frontend, bundle ffmpeg)
+        working-directory: ytpd-desktop
+        env:
+          YTPD_PLATFORMS: ${{ matrix.platforms }}
+          YTPD_WEB_REPO_PATH: ${{ github.workspace }}/ytpd-web
+        run: node scripts/prepare-resources.mjs
+
+      - name: Package and publish
+        working-directory: ytpd-desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --publish always

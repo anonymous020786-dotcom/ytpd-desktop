@@ -9,13 +9,18 @@
     "build": "tsc -p tsconfig.json",
     "prepare:resources": "node scripts/prepare-resources.mjs",
     "start": "npm run build && electron .",
-    "dist": "npm run build && npm run prepare:resources && electron-builder"
+    "dist": "npm run build && npm run prepare:resources && electron-builder",
+    "dist:win": "cross-env YTPD_PLATFORMS=win npm run dist -- --win",
+    "dist:linux": "cross-env YTPD_PLATFORMS=linux npm run dist -- --linux",
+    "dist:mac": "cross-env YTPD_PLATFORMS=osx-arm64,osx-x64 npm run dist -- --mac"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "cross-env": "^10.1.0",
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
     "playwright-core": "^1.63.0",
+    "png2icons": "^2.0.1",
     "typescript": "^5.7.2"
   },
   "build": {
@@ -30,27 +35,67 @@
     ],
     "extraResources": [
       {
-        "from": "resources/backend-win",
-        "to": "backend"
-      },
-      {
         "from": "resources/frontend",
         "to": "frontend"
-      },
-      {
-        "from": "resources/ffmpeg",
-        "to": "ffmpeg"
       }
     ],
     "win": {
       "target": "nsis",
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "extraResources": [
+        {
+          "from": "resources/backend-win",
+          "to": "backend"
+        },
+        {
+          "from": "resources/ffmpeg-win",
+          "to": "ffmpeg"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": "zip",
+      "icon": "build/icon.icns",
+      "category": "public.app-category.utilities",
+      "extraResources": [
+        {
+          "from": "resources/backend-osx-${arch}",
+          "to": "backend"
+        },
+        {
+          "from": "resources/ffmpeg-osx-${arch}",
+          "to": "ffmpeg"
+        }
+      ]
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "build/icons",
+      "category": "AudioVideo",
+      "extraResources": [
+        {
+          "from": "resources/backend-linux",
+          "to": "backend"
+        },
+        {
+          "from": "resources/ffmpeg-linux",
+          "to": "ffmpeg"
+        }
+      ]
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "anonymous020786-dotcom",
+      "repo": "ytpd-desktop"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

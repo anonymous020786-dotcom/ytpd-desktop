@@ -4,6 +4,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, type MenuItemConstructorOpti
 import { FRONTEND_URL } from "./constants";
 import { startBackend, startFrontend, stopProcess } from "./sidecar";
 import { type AppSettings, loadSettings, saveSettings } from "./settings";
+import { checkForUpdatesManual, initAutoUpdater } from "./updater";
 
 let mainWindow: BrowserWindow | null = null;
 let backendProc: ChildProcess | null = null;
@@ -57,6 +58,19 @@ function buildMenu() {
         },
       ],
     },
+    {
+      label: "Help",
+      submenu: [
+        {
+          label: "Check for Updates…",
+          click: () => checkForUpdatesManual(),
+        },
+        {
+          label: `Version ${app.getVersion()}`,
+          enabled: false,
+        },
+      ],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -83,6 +97,7 @@ app.whenReady().then(async () => {
 
   buildMenu();
   await createWindow();
+  initAutoUpdater();
 
   ipcMain.handle("get-download-folder", () => settings.downloadFolder);
 

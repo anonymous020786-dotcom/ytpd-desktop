@@ -4,16 +4,27 @@ import { app } from "electron";
 import { BACKEND_PORT, FRONTEND_PORT } from "./constants";
 import type { AppSettings } from "./settings";
 
-// Packaged app: electron-builder's extraResources copy resources/backend-win
+// Packaged app: electron-builder's extraResources copy resources/backend-<rid>
 // -> "backend" inside process.resourcesPath (see package.json). Dev (`npm
 // start`, unpackaged): that copy/rename never runs, so this must point at
-// the raw folder `npm run prepare:resources` actually created on disk.
+// the raw per-platform folder `npm run prepare:resources` actually created.
 function resourcesPath(): string {
   return app.isPackaged ? process.resourcesPath : path.join(__dirname, "..", "resources");
 }
 
 function backendDirName(): string {
-  return app.isPackaged ? "backend" : "backend-win";
+  if (app.isPackaged) return "backend";
+  if (process.platform === "win32") return "backend-win";
+  if (process.platform === "darwin") return `backend-osx-${process.arch === "arm64" ? "arm64" : "x64"}`;
+  return "backend-linux";
+}
+
+function backendExeName(): string {
+  return process.platform === "win32" ? "YtpdWeb.Api.exe" : "YtpdWeb.Api";
+}
+
+function ffmpegExeName(): string {
+  return process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
 }
 
 async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
@@ -32,8 +43,8 @@ async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
 
 export async function startBackend(settings: AppSettings): Promise<ChildProcess> {
   const res = resourcesPath();
-  const backendExe = path.join(res, backendDirName(), "YtpdWeb.Api.exe");
-  const ffmpegExe = path.join(res, "ffmpeg", "ffmpeg.exe");
+  const backendExe = path.join(res, backendDirName(), backendExeName());
+  const ffmpegExe = path.join(res, "ffmpeg", ffmpegExeName());
   const userData = app.getPath("userData");
 
   const proc = spawn(backendExe, [], {

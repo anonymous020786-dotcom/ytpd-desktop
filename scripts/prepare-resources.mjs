@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,14 +22,54 @@ if (!existsSync(backendProj) || !existsSync(frontendRoot)) {
   );
 }
 
-console.log("== Publishing backend (self-contained win-x64) ==");
-const backendOut = path.join(resourcesRoot, "backend-win");
-rmSync(backendOut, { recursive: true, force: true });
-execSync(
-  `dotnet publish "${backendProj}" -c Release -r win-x64 --self-contained true ` +
-    `-p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "${backendOut}"`,
-  { stdio: "inherit" }
-);
+// Each target: { rid: dotnet RID, dirSuffix: matches sidecar.ts's backendDirName(),
+// ffmpegEnv: which env var supplies that platform's static ffmpeg binary,
+// ffmpegExeName: filename to copy it as, exeName: published binary's filename }
+const PLATFORM_TARGETS = {
+  win: { rid: "win-x64", dirSuffix: "win", ffmpegEnv: "YTPD_FFMPEG_WIN", ffmpegExeName: "ffmpeg.exe", exeName: "YtpdWeb.Api.exe" },
+  linux: { rid: "linux-x64", dirSuffix: "linux", ffmpegEnv: "YTPD_FFMPEG_LINUX", ffmpegExeName: "ffmpeg", exeName: "YtpdWeb.Api" },
+  "osx-x64": { rid: "osx-x64", dirSuffix: "osx-x64", ffmpegEnv: "YTPD_FFMPEG_OSX_X64", ffmpegExeName: "ffmpeg", exeName: "YtpdWeb.Api" },
+  "osx-arm64": { rid: "osx-arm64", dirSuffix: "osx-arm64", ffmpegEnv: "YTPD_FFMPEG_OSX_ARM64", ffmpegExeName: "ffmpeg", exeName: "YtpdWeb.Api" },
+};
+
+const requested = (process.env.YTPD_PLATFORMS || "win").split(",").map((s) => s.trim());
+for (const p of requested) {
+  if (!PLATFORM_TARGETS[p]) {
+    throw new Error(`Unknown platform "${p}" in YTPD_PLATFORMS. Valid: ${Object.keys(PLATFORM_TARGETS).join(", ")}`);
+  }
+}
+
+for (const key of requested) {
+  const t = PLATFORM_TARGETS[key];
+  console.log(`== Publishing backend (self-contained ${t.rid}) ==`);
+  const backendOut = path.join(resourcesRoot, `backend-${t.dirSuffix}`);
+  rmSync(backendOut, { recursive: true, force: true });
+  execSync(
+    `dotnet publish "${backendProj}" -c Release -r ${t.rid} --self-contained true ` +
+      `-p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "${backendOut}"`,
+    { stdio: "inherit" }
+  );
+  // dotnet publish sets the exec bit correctly only when run on a matching
+  // POSIX host; cross-publishing linux/osx targets from Windows won't set
+  // it at all, so force it here (a no-op, harmlessly, on win32).
+  if (t.rid !== "win-x64" && process.platform !== "win32") {
+    chmodSync(path.join(backendOut, t.exeName), 0o755);
+  }
+
+  console.log(`== Bundling ffmpeg for ${key} ==`);
+  const ffmpegOut = path.join(resourcesRoot, `ffmpeg-${t.dirSuffix}`);
+  mkdirSync(ffmpegOut, { recursive: true });
+  const localFfmpeg = process.env[t.ffmpegEnv];
+  if (!localFfmpeg || !existsSync(localFfmpeg)) {
+    throw new Error(
+      `Set ${t.ffmpegEnv} to a static ffmpeg binary for ${key} to bundle. ` +
+        "Not fetched automatically so this script never pulls a binary from the network on its own."
+    );
+  }
+  const dest = path.join(ffmpegOut, t.ffmpegExeName);
+  cpSync(localFfmpeg, dest);
+  if (process.platform !== "win32") chmodSync(dest, 0o755);
+}
 
 console.log("== Building frontend (desktop API URL baked in) ==");
 execSync("npm run build", {
@@ -47,17 +87,5 @@ cpSync(path.join(frontendRoot, ".next", "static"), path.join(frontendOut, ".next
 if (existsSync(path.join(frontendRoot, "public"))) {
   cpSync(path.join(frontendRoot, "public"), path.join(frontendOut, "public"), { recursive: true });
 }
-
-console.log("== Bundling ffmpeg ==");
-const ffmpegOut = path.join(resourcesRoot, "ffmpeg");
-mkdirSync(ffmpegOut, { recursive: true });
-const localFfmpeg = process.env.YTPD_FFMPEG_PATH;
-if (!localFfmpeg || !existsSync(localFfmpeg)) {
-  throw new Error(
-    "Set YTPD_FFMPEG_PATH to a static ffmpeg.exe to bundle (e.g. a Windows build from gyan.dev). " +
-      "Not fetched automatically so this script never pulls a binary from the network on its own."
-  );
-}
-cpSync(localFfmpeg, path.join(ffmpegOut, "ffmpeg.exe"));
 
 console.log("Resources prepared: " + resourcesRoot);
