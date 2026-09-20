@@ -86,6 +86,6 @@ scripts/
 
 ## What's not in this build yet
 
-- Code signing on any platform (Windows shows an "unknown publisher" SmartScreen prompt; unsigned macOS builds need a Gatekeeper right-click-to-open bypass)
-- macOS x64 (Intel) builds — CI currently only builds `osx-arm64`; add an `os: macos-13` matrix entry with `platforms: osx-x64` to the workflow for Intel support
+- **Code signing on any platform** — this is a real, unavoidable blocker, not a to-do I can just code: Windows needs a paid code-signing certificate (~$200-500/yr from a CA), and macOS needs an Apple Developer Program membership ($99/yr) for `codesign`/notarization. Both require your own identity/payment; until then, Windows shows an "unknown publisher" SmartScreen prompt and macOS needs a Gatekeeper right-click-to-open bypass.
 - Linux `.deb`/`.rpm` targets (only AppImage right now)
+- macOS/Linux builds are produced by CI only — I have no way to execute or visually verify an ELF or Mach-O binary from this Windows machine. Windows builds are the only ones I've actually run and screenshotted; Mac/Linux correctness rests on the build succeeding cleanly and the code being platform-generic (same sidecar/IPC logic, no OS-specific branches beyond paths and binary names).

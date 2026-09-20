@@ -34,6 +34,8 @@ jobs:
             platforms: win
           - os: macos-latest
             platforms: osx-arm64
+          - os: macos-13
+            platforms: osx-x64
           - os: ubuntu-latest
             platforms: linux
     runs-on: ${{ matrix.os }}
@@ -71,7 +73,11 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install ffmpeg
-          echo "YTPD_FFMPEG_OSX_ARM64=$(which ffmpeg)" >> "$GITHUB_ENV"
+          if [ "$(uname -m)" = "arm64" ]; then
+            echo "YTPD_FFMPEG_OSX_ARM64=$(which ffmpeg)" >> "$GITHUB_ENV"
+          else
+            echo "YTPD_FFMPEG_OSX_X64=$(which ffmpeg)" >> "$GITHUB_ENV"
+          fi
 
       - name: Install ffmpeg (Linux)
         if: runner.os == 'Linux'
