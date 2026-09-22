@@ -1,7 +1,7 @@
 {
   "name": "ytpd-desktop",
   "productName": "Playlist Grabber",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Desktop app for downloading YouTube playlists, channels, and videos",
   "private": true,
   "main": "dist/main.js",
@@ -17,8 +17,8 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "cross-env": "^10.1.0",
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8",
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3",
     "playwright-core": "^1.63.0",
     "png2icons": "^2.0.1",
     "typescript": "^5.7.2"
