@@ -3,3 +3,7 @@ dist/
 release/
 resources/
 verify-shots/
+
+# local machine's MCP server config (references a local AWS profile name,
+# not committed since other clones/machines will have their own)
+/.mcp.json
