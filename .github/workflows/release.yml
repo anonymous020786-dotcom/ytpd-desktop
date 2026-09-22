@@ -25,7 +25,30 @@ permissions:
   contents: write
 
 jobs:
+  # Creates the GitHub release once, before any platform build starts.
+  # Without this, all 3 matrix jobs below run `electron-builder --publish
+  # always` in parallel, each independently checking "does a release for
+  # this tag exist yet?" - and when none does, more than one job can win
+  # that race and create its own release object, splitting the uploaded
+  # assets across duplicates (hit this for real on v1.0.3: the macOS job's
+  # assets landed on a separate release from Windows/Linux's). Creating it
+  # up front means every matrix job finds it already there and just
+  # uploads to it.
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "Playlist Grabber ${{ github.ref_name }}" \
+            --draft \
+            --generate-notes
+
   build:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -115,3 +138,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx electron-builder --publish always
+
+  finalize-release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --draft=false \
+            --latest
