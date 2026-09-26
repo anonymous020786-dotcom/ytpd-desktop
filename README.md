@@ -24,6 +24,18 @@ Electron's main process spawns two local "sidecar" processes bound to `127.0.0.1
 
 All persistent data (SQLite job history, temp download files, the chosen downloads folder) lives under Electron's `userData` directory, except the downloads folder itself, which defaults to `~/Downloads/Playlist Grabber` and can be changed from the navbar (native folder picker) — picking a new one restarts just the backend sidecar with the new path.
 
+## Updates
+
+New releases (see CI below) reach installed apps through `electron-updater`, which reads the `latest*.yml` files attached to the newest GitHub release. Users choose how under **Help → Updates**:
+
+- **Download and install automatically** (default): checks shortly after launch and then hourly, downloads in the background (differential — usually only a few MB), then offers *Restart now* / *Later*; *Later* installs on the next quit.
+- **Ask me before downloading**: shows the new version and its release notes, with *Download and install* / *Remind me later* / *Skip this version*. A skipped version stays quiet in background checks until something newer ships.
+- **Only when I check**: no background checks; only **Help → Check for Updates…**, which always answers (including "You're up to date") and still offers a skipped version.
+
+While downloading, progress shows on the taskbar/dock icon. The choice lives in `settings.json` (`updateMode`, `skippedVersion`).
+
+**macOS / non-AppImage Linux:** Squirrel.Mac only installs updates into an app signed with an Apple Developer ID, which this build isn't, and Linux in-place updates need the AppImage. There, the same prompts offer *Open download page* instead of installing.
+
 ## Prerequisites
 
 - Node 20+

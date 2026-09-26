@@ -3,8 +3,8 @@ import path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Menu, type MenuItemConstructorOptions, shell } from "electron";
 import { FRONTEND_URL } from "./constants";
 import { startBackend, startFrontend, stopProcess } from "./sidecar";
-import { type AppSettings, loadSettings, saveSettings } from "./settings";
-import { checkForUpdatesManual, initAutoUpdater } from "./updater";
+import { type AppSettings, loadSettings, saveSettings, type UpdateMode } from "./settings";
+import { checkForUpdatesManual, initAutoUpdater, setUpdateMode } from "./updater";
 
 let mainWindow: BrowserWindow | null = null;
 let backendProc: ChildProcess | null = null;
@@ -75,7 +75,22 @@ async function createWindow() {
   await mainWindow.loadURL(FRONTEND_URL);
 }
 
+const UPDATE_MODE_LABELS: Record<UpdateMode, string> = {
+  auto: "Download and install automatically",
+  ask: "Ask me before downloading",
+  manual: "Only when I check",
+};
+
 function buildMenu() {
+  const updateModeItems: MenuItemConstructorOptions[] = (Object.keys(UPDATE_MODE_LABELS) as UpdateMode[]).map(
+    (mode) => ({
+      label: UPDATE_MODE_LABELS[mode],
+      type: "radio",
+      checked: settings.updateMode === mode,
+      click: () => setUpdateMode(mode),
+    })
+  );
+
   const template: MenuItemConstructorOptions[] = [
     ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
     { role: "editMenu" as const },
@@ -97,6 +112,11 @@ function buildMenu() {
           label: "Check for Updates…",
           click: () => checkForUpdatesManual(),
         },
+        {
+          label: "Updates",
+          submenu: updateModeItems,
+        },
+        { type: "separator" },
         {
           label: `Version ${app.getVersion()}`,
           enabled: false,
@@ -124,7 +144,7 @@ async function launchBackend() {
 }
 
 async function restartBackendWithNewFolder(folder: string) {
-  const previous = settings;
+  const previousFolder = settings.downloadFolder;
   const doRestart = async () => {
     await stopProcess(backendProc);
     settings = { ...settings, downloadFolder: folder };
@@ -134,7 +154,7 @@ async function restartBackendWithNewFolder(folder: string) {
     } catch (err) {
       // New folder didn't work (e.g. not writable) - go back to the old one
       // rather than leaving the app with no backend at all.
-      settings = previous;
+      settings = { ...settings, downloadFolder: previousFolder };
       await launchBackend();
       throw err;
     }
@@ -224,7 +244,14 @@ if (!app.requestSingleInstanceLock()) {
 
     buildMenu();
     await createWindow();
-    initAutoUpdater();
+    initAutoUpdater({
+      getSettings: () => settings,
+      updateSettings: (patch) => {
+        settings = { ...settings, ...patch };
+        saveSettings(settings);
+      },
+      getWindow: () => mainWindow,
+    });
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
