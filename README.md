@@ -18,17 +18,17 @@ some-folder/
 
 Electron's main process spawns two local "sidecar" processes bound to `127.0.0.1` on fixed ports, waits for both to come up, then opens a window pointed at the frontend:
 
-- **Backend** (`127.0.0.1:47391`) — the same `YtpdWeb.Api` from `ytpd-web/backend`, published as a self-contained single-file `.exe` (no .NET runtime install required). Runs with `Auth:LocalMode=true`, which enables an unauthenticated `/api/auth/local-token` endpoint — safe only because this process never binds to anything but loopback. The frontend auto-detects it's running inside Electron (via a `contextBridge`-exposed `window.electronAPI`) and calls that endpoint on launch instead of showing a login screen.
-- **Frontend** (`127.0.0.1:47392`) — the same Next.js app from `ytpd-web/frontend`, built with `output: "standalone"` and its `NEXT_PUBLIC_API_URL` baked in at build time to the fixed backend port above (which is why the port is fixed rather than dynamically chosen — a browser client env var can't be changed after the fact). Hosted by running Electron's own binary in plain-Node mode (`ELECTRON_RUN_AS_NODE=1`) against the standalone `server.js`, so no separate Node.js runtime needs bundling either.
+- **Backend** (`127.0.0.1:47391`) — the same `YtpdWeb.Api` from `ytpd-web/backend`, published as a self-contained single-file `.exe` (no .NET runtime install required). Runs with `Auth:Disabled=true`, which turns authentication off entirely — no login, no JWT, every endpoint anonymous. That's safe only because this process never binds to anything but loopback.
+- **Frontend** (`127.0.0.1:47392`) — the same Next.js app from `ytpd-web/frontend`, built with `output: "standalone"`, with `NEXT_PUBLIC_AUTH_DISABLED=true` (no login screen or logout button) and `NEXT_PUBLIC_API_URL` baked in at build time — the latter set to the fixed backend port above (which is why the port is fixed rather than dynamically chosen — a browser client env var can't be changed after the fact). Hosted by running Electron's own binary in plain-Node mode (`ELECTRON_RUN_AS_NODE=1`) against the standalone `server.js`, so no separate Node.js runtime needs bundling either.
 - **ffmpeg** — bundled as a plain binary and pointed to via `Ffmpeg:Path`, since the desktop build can't rely on it being on the end user's `PATH`.
 
-All persistent data (SQLite job history, temp download files, the chosen downloads folder, a per-install JWT secret) lives under Electron's `userData` directory, except the downloads folder itself, which defaults to `~/Downloads/Playlist Grabber` and can be changed from the navbar (native folder picker) — picking a new one restarts just the backend sidecar with the new path.
+All persistent data (SQLite job history, temp download files, the chosen downloads folder) lives under Electron's `userData` directory, except the downloads folder itself, which defaults to `~/Downloads/Playlist Grabber` and can be changed from the navbar (native folder picker) — picking a new one restarts just the backend sidecar with the new path.
 
 ## Prerequisites
 
 - Node 20+
 - .NET 8 SDK (to publish the backend)
-- A static ffmpeg binary per platform you're building for (not fetched automatically — see below)
+- A **static** ffmpeg binary per platform you're building for (not fetched automatically — see below). A package-manager install (Chocolatey shim, Homebrew/apt build) won't work once copied into the app; [`ffmpeg-static`](https://www.npmjs.com/package/ffmpeg-static) is an easy source, and is what CI uses.
 
 ## Building
 
@@ -74,7 +74,7 @@ src/
   main.ts       Electron main process: window, menu, IPC handlers, lifecycle, auto-updater wiring
   preload.ts    contextBridge - exposes window.electronAPI to the renderer
   sidecar.ts    spawns/health-checks the backend and frontend child processes (platform-aware)
-  settings.ts   persisted app settings (download folder, per-install JWT secret)
+  settings.ts   persisted app settings (download folder)
   updater.ts    electron-updater setup: background checks + manual "Check for Updates" flow
   constants.ts  fixed sidecar ports
 scripts/

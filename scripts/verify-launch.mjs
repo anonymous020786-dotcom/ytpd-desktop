@@ -5,13 +5,15 @@ import { _electron as electron } from "playwright-core";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.join(__dirname, "..");
 const shotDir = path.join(appDir, "verify-shots");
 fs.mkdirSync(shotDir, { recursive: true });
 
-const electronBin = path.join(appDir, "node_modules", "electron", "dist", "electron.exe");
+// The electron package's main export is the platform-specific binary path.
+const electronBin = createRequire(import.meta.url)("electron");
 
 const consoleErrors = [];
 
@@ -46,8 +48,8 @@ console.log("URL:", page.url());
 await page.screenshot({ path: path.join(shotDir, "01-initial.png") });
 console.log("Screenshot 1 saved.");
 
-// Should already be auto-logged-in (LocalMode) and past the login screen -
-// wait for the dashboard's URL-resolve card as proof.
+// The desktop build has no login at all - the dashboard's URL-resolve card
+// should be the first thing on screen.
 try {
   await page.waitForSelector("text=Paste a YouTube link", { timeout: 20_000 });
   console.log("Dashboard reached.");
@@ -58,6 +60,7 @@ try {
 await page.screenshot({ path: path.join(shotDir, "02-dashboard.png") });
 console.log("Screenshot 2 saved.");
 
+if (/\/login/.test(page.url())) console.log("FAIL: ended up on a login page.");
 console.log("Console errors:", consoleErrors.length ? consoleErrors : "(none)");
 
 await app.close();

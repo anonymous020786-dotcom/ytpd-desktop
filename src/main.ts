@@ -10,6 +10,27 @@ let mainWindow: BrowserWindow | null = null;
 let backendProc: ChildProcess | null = null;
 let frontendProc: ChildProcess | null = null;
 let settings: AppSettings;
+let isQuitting = false;
+// Set while the backend is being deliberately restarted, so its exit isn't
+// reported as a crash.
+let restartingBackend: Promise<void> | null = null;
+
+function isAppUrl(url: string) {
+  try {
+    return new URL(url).origin === new URL(FRONTEND_URL).origin;
+  } catch {
+    return false;
+  }
+}
+
+function openExternalSafely(url: string) {
+  try {
+    const { protocol } = new URL(url);
+    if (protocol === "http:" || protocol === "https:") shell.openExternal(url);
+  } catch {
+    // not a URL - ignore
+  }
+}
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
@@ -19,11 +40,14 @@ async function createWindow() {
     minHeight: 640,
     title: "Playlist Grabber",
     backgroundColor: "#0a0a0a",
-    icon: path.join(__dirname, "..", "build", "icon.ico"),
+    // Windows/macOS take the icon from the packaged executable/bundle; Linux
+    // needs it set on the window explicitly.
+    ...(process.platform === "linux" ? { icon: path.join(__dirname, "..", "build", "icon.png") } : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
     show: false,
   });
@@ -36,8 +60,16 @@ async function createWindow() {
   // Anything that would open a new window (e.g. a target=_blank link) opens
   // in the system browser instead of a second Electron window.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalSafely(url);
     return { action: "deny" };
+  });
+
+  // Same for in-place navigation away from the bundled frontend - the app
+  // window should never turn into a general-purpose browser.
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (isAppUrl(url)) return;
+    event.preventDefault();
+    openExternalSafely(url);
   });
 
   await mainWindow.loadURL(FRONTEND_URL);
@@ -75,30 +107,55 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-async function restartBackendWithNewFolder(folder: string) {
-  settings = { ...settings, downloadFolder: folder };
-  saveSettings(settings);
-  stopProcess(backendProc);
-  backendProc = await startBackend(settings);
+function watchSidecar(proc: ChildProcess, name: string) {
+  proc.once("exit", (code, signal) => {
+    if (isQuitting || restartingBackend || (proc !== backendProc && proc !== frontendProc)) return;
+    dialog.showErrorBox(
+      "Playlist Grabber stopped unexpectedly",
+      `The ${name} process exited (${signal ?? `code ${code}`}). The app will now close - please reopen it.`
+    );
+    app.quit();
+  });
 }
 
-app.whenReady().then(async () => {
-  settings = loadSettings();
+async function launchBackend() {
+  backendProc = await startBackend(settings);
+  watchSidecar(backendProc, "download engine");
+}
 
-  try {
-    backendProc = await startBackend(settings);
-    frontendProc = await startFrontend();
-  } catch (err) {
-    console.error("Startup failed:", err);
-    dialog.showErrorBox("Playlist Grabber failed to start", String(err));
-    app.quit();
-    return;
-  }
+async function restartBackendWithNewFolder(folder: string) {
+  const previous = settings;
+  const doRestart = async () => {
+    await stopProcess(backendProc);
+    settings = { ...settings, downloadFolder: folder };
+    try {
+      await launchBackend();
+      saveSettings(settings);
+    } catch (err) {
+      // New folder didn't work (e.g. not writable) - go back to the old one
+      // rather than leaving the app with no backend at all.
+      settings = previous;
+      await launchBackend();
+      throw err;
+    }
+  };
 
-  buildMenu();
-  await createWindow();
-  initAutoUpdater();
+  // Serialize: a second folder change while one is still restarting waits
+  // for it instead of racing it for the port.
+  const run = (restartingBackend ?? Promise.resolve()).then(doRestart);
+  const tracked = run.finally(() => {
+    if (restartingBackend === tracked) restartingBackend = null;
+  });
+  restartingBackend = tracked.catch(() => {});
+  await tracked;
+}
 
+function isInside(child: string, parent: string) {
+  const rel = path.relative(path.resolve(parent), path.resolve(child));
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+function registerIpcHandlers() {
   ipcMain.handle("get-download-folder", () => settings.downloadFolder);
 
   ipcMain.handle("choose-download-folder", async () => {
@@ -110,22 +167,76 @@ app.whenReady().then(async () => {
     if (result.canceled || result.filePaths.length === 0) return null;
 
     const folder = result.filePaths[0];
-    await restartBackendWithNewFolder(folder);
+    if (folder === settings.downloadFolder) return folder;
+    try {
+      await restartBackendWithNewFolder(folder);
+    } catch (err) {
+      dialog.showErrorBox("Could not use that folder", String(err));
+      return null;
+    }
     return folder;
   });
 
-  ipcMain.handle("open-path", (_event, targetPath: string) => shell.openPath(targetPath));
-
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  // Only ever opens things inside the downloads folder - shell.openPath on
+  // an arbitrary path would happily launch executables.
+  ipcMain.handle("open-path", async (_event, targetPath: unknown) => {
+    if (typeof targetPath !== "string" || !isInside(targetPath, settings.downloadFolder)) {
+      return "Refusing to open a path outside the downloads folder.";
+    }
+    return shell.openPath(targetPath);
   });
-});
+}
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
-});
+function killSidecars() {
+  // Synchronous best-effort kill: before-quit can't await, and on Windows
+  // kill() is an immediate TerminateProcess anyway.
+  for (const proc of [backendProc, frontendProc]) {
+    if (proc && proc.exitCode === null && proc.signalCode === null) proc.kill();
+  }
+}
 
-app.on("before-quit", () => {
-  stopProcess(backendProc);
-  stopProcess(frontendProc);
-});
+// Both sidecars bind fixed ports, so a second copy of the app would find
+// them taken (or worse, talk to the first copy's backend). Focus the
+// existing window instead.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  });
+
+  app.whenReady().then(async () => {
+    settings = loadSettings();
+    registerIpcHandlers();
+
+    try {
+      await launchBackend();
+      frontendProc = await startFrontend();
+      watchSidecar(frontendProc, "interface");
+    } catch (err) {
+      console.error("Startup failed:", err);
+      dialog.showErrorBox("Playlist Grabber failed to start", String(err));
+      app.quit();
+      return;
+    }
+
+    buildMenu();
+    await createWindow();
+    initAutoUpdater();
+
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit();
+  });
+
+  app.on("before-quit", () => {
+    isQuitting = true;
+    killSidecars();
+  });
+}

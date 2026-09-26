@@ -13,7 +13,9 @@ name: Release desktop builds
 #   private anonymous020786-dotcom/ytpd-web repo (this workflow checks it
 #   out as a sibling directory, since that's where backend/frontend live).
 #
-# Triggers on pushing a tag like v1.2.3, or manually via Actions tab.
+# Triggers on pushing a tag like v1.2.3 (builds + publishes a release), or
+# manually via the Actions tab (builds only; installers are attached to the
+# workflow run as artifacts instead of being published).
 
 on:
   push:
@@ -49,6 +51,9 @@ jobs:
 
   build:
     needs: create-release
+    # create-release is skipped on a manual (non-tag) run, and a skipped
+    # dependency would otherwise skip this job too.
+    if: ${{ !cancelled() && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
@@ -87,31 +92,26 @@ jobs:
         with:
           node-version: "20"
 
-      # Each OS resolves its own static ffmpeg differently, then exports the
-      # matching YTPD_FFMPEG_* var prepare-resources.mjs expects.
-      - name: Install ffmpeg (Windows)
-        if: runner.os == 'Windows'
+      # A *static* ffmpeg is required: it's copied into the app on its own,
+      # so a package-manager build (choco's shim exe, or brew/apt's
+      # dynamically-linked binary) breaks on end users' machines.
+      # ffmpeg-static ships static builds for win-x64, linux-x64 and both
+      # macOS arches.
+      - name: Fetch static ffmpeg
+        shell: bash
         run: |
-          choco install ffmpeg -y
-          echo "YTPD_FFMPEG_WIN=$((Get-Command ffmpeg).Source)" >> $env:GITHUB_ENV
-        shell: pwsh
-
-      - name: Install ffmpeg (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install ffmpeg
-          if [ "$(uname -m)" = "arm64" ]; then
-            echo "YTPD_FFMPEG_OSX_ARM64=$(which ffmpeg)" >> "$GITHUB_ENV"
-          else
-            echo "YTPD_FFMPEG_OSX_X64=$(which ffmpeg)" >> "$GITHUB_ENV"
-          fi
-
-      - name: Install ffmpeg (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          echo "YTPD_FFMPEG_LINUX=$(which ffmpeg)" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/ffmpeg-static" && cd "$RUNNER_TEMP/ffmpeg-static"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund ffmpeg-static@5
+          FFMPEG_BIN="$(node -p "require('ffmpeg-static')")"
+          test -f "$FFMPEG_BIN" || { echo "::error::ffmpeg-static didn't download its binary"; exit 1; }
+          case "${{ matrix.platforms }}" in
+            win) VAR=YTPD_FFMPEG_WIN ;;
+            linux) VAR=YTPD_FFMPEG_LINUX ;;
+            osx-arm64) VAR=YTPD_FFMPEG_OSX_ARM64 ;;
+            osx-x64) VAR=YTPD_FFMPEG_OSX_X64 ;;
+          esac
+          echo "$VAR=$FFMPEG_BIN" >> "$GITHUB_ENV"
 
       - name: Install desktop dependencies
         working-directory: ytpd-desktop
@@ -132,12 +132,37 @@ jobs:
           YTPD_WEB_REPO_PATH: ${{ github.workspace }}/ytpd-web
         run: node scripts/prepare-resources.mjs
 
+      # electron-builder uploads to the release named v<package.json
+      # version>, not to the pushed tag - a mismatch would silently create a
+      # second draft release instead of filling the one made above.
+      - name: Check tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/')
+        working-directory: ytpd-desktop
+        shell: bash
+        run: |
+          VERSION="v$(node -p "require('./package.json').version")"
+          if [ "$VERSION" != "${{ github.ref_name }}" ]; then
+            echo "::error::Tag ${{ github.ref_name }} does not match package.json version $VERSION"
+            exit 1
+          fi
+
       - name: Package and publish
         working-directory: ytpd-desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npx electron-builder --publish always
+        run: npx electron-builder --publish ${{ startsWith(github.ref, 'refs/tags/') && 'always' || 'never' }}
+
+      - name: Upload build artifacts (manual runs)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playlist-grabber-${{ matrix.platforms }}
+          path: |
+            ytpd-desktop/release/*.exe
+            ytpd-desktop/release/*.zip
+            ytpd-desktop/release/*.AppImage
+          if-no-files-found: error
 
   finalize-release:
     if: startsWith(github.ref, 'refs/tags/')

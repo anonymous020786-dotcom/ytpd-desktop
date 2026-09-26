@@ -71,11 +71,18 @@ for (const key of requested) {
   if (process.platform !== "win32") chmodSync(dest, 0o755);
 }
 
-console.log("== Building frontend (desktop API URL baked in) ==");
+console.log("== Building frontend (desktop API URL baked in, auth off) ==");
 execSync("npm run build", {
   cwd: frontendRoot,
   stdio: "inherit",
-  env: { ...process.env, NEXT_PUBLIC_API_URL: "http://127.0.0.1:47391" },
+  env: {
+    ...process.env,
+    // Must match BACKEND_URL in src/constants.ts.
+    NEXT_PUBLIC_API_URL: "http://127.0.0.1:47391",
+    // The desktop backend runs with Auth__Disabled (see src/sidecar.ts), so
+    // the UI has no login screen at all.
+    NEXT_PUBLIC_AUTH_DISABLED: "true",
+  },
 });
 
 console.log("== Copying frontend standalone output ==");

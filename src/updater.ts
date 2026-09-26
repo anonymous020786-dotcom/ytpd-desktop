@@ -55,16 +55,24 @@ export async function checkForUpdatesManual() {
 
   try {
     const result = await autoUpdater.checkForUpdates();
-    const isNewer = result && result.updateInfo.version !== app.getVersion();
-    if (!isNewer) {
+    // isUpdateAvailable, not a plain version !== compare: a mismatched but
+    // *older* remote version (e.g. a pulled release) isn't an update.
+    if (!result?.isUpdateAvailable) {
       await dialog.showMessageBox({
         type: "info",
         message: `You're up to date.`,
         detail: `Playlist Grabber ${app.getVersion()}`,
       });
+      return;
     }
-    // If it IS newer, the "update-available"/"update-downloaded" listeners
-    // registered in initAutoUpdater already handle telling the user.
+    // The "update-downloaded" listener in initAutoUpdater offers the restart
+    // once the download finishes; say something now so the click doesn't
+    // look like it did nothing in the meantime.
+    await dialog.showMessageBox({
+      type: "info",
+      message: `Playlist Grabber ${result.updateInfo.version} is available.`,
+      detail: "It's downloading in the background - you'll be asked to restart when it's ready.",
+    });
   } catch (err) {
     await dialog.showMessageBox({
       type: "error",

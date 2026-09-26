@@ -1,14 +1,9 @@
-import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { app } from "electron";
 
 export type AppSettings = {
   downloadFolder: string;
-  // Generated once per install so restarting the backend (e.g. after
-  // changing the download folder) doesn't invalidate an already-issued
-  // token in the renderer.
-  jwtSecret: string;
 };
 
 const SETTINGS_PATH = path.join(app.getPath("userData"), "settings.json");
@@ -16,16 +11,22 @@ const SETTINGS_PATH = path.join(app.getPath("userData"), "settings.json");
 function defaultSettings(): AppSettings {
   return {
     downloadFolder: path.join(app.getPath("downloads"), "Playlist Grabber"),
-    jwtSecret: randomBytes(48).toString("base64"),
   };
 }
 
 export function loadSettings(): AppSettings {
   if (existsSync(SETTINGS_PATH)) {
     try {
-      const loaded = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Partial<AppSettings>;
-      const merged = { ...defaultSettings(), ...loaded };
-      if (!loaded.jwtSecret || !loaded.downloadFolder) saveSettings(merged);
+      const loaded = JSON.parse(readFileSync(SETTINGS_PATH, "utf-8")) as Partial<AppSettings> | null;
+      // Only pick known keys, so fields left over from older versions (e.g.
+      // the jwtSecret from when the app still had a login) get dropped.
+      const merged: AppSettings = {
+        downloadFolder:
+          typeof loaded?.downloadFolder === "string" && loaded.downloadFolder
+            ? loaded.downloadFolder
+            : defaultSettings().downloadFolder,
+      };
+      if (JSON.stringify(loaded) !== JSON.stringify(merged)) saveSettings(merged);
       return merged;
     } catch {
       // fall through to fresh defaults if the file is corrupt
