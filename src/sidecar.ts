@@ -96,8 +96,6 @@ export async function startBackend(settings: AppSettings): Promise<ChildProcess>
       ...process.env,
       ASPNETCORE_URLS: `http://127.0.0.1:${BACKEND_PORT}`,
       ASPNETCORE_ENVIRONMENT: "Production",
-      // Loopback-only, single local user: no login, no JWT.
-      Auth__Disabled: "true",
       Storage__TempPath: path.join(userData, "temp"),
       Storage__DownloadsPath: settings.downloadFolder,
       Database__Path: path.join(userData, "ytpd.db"),

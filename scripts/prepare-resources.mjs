@@ -84,7 +84,7 @@ for (const key of requested) {
   }
 }
 
-console.log("== Building frontend (desktop API URL baked in, auth off) ==");
+console.log("== Building frontend (desktop API URL baked in) ==");
 execSync("npm run build", {
   cwd: frontendRoot,
   stdio: "inherit",
@@ -92,9 +92,6 @@ execSync("npm run build", {
     ...process.env,
     // Must match BACKEND_URL in src/constants.ts.
     NEXT_PUBLIC_API_URL: "http://127.0.0.1:47391",
-    // The desktop backend runs with Auth__Disabled (see src/sidecar.ts), so
-    // the UI has no login screen at all.
-    NEXT_PUBLIC_AUTH_DISABLED: "true",
   },
 });
 
