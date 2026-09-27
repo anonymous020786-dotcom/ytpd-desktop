@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { app } from "electron";
 import { BACKEND_PORT, FRONTEND_PORT } from "./constants";
@@ -35,6 +35,11 @@ function backendExeName(): string {
 
 function ffmpegExeName(): string {
   return process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+}
+
+// Bundled next to ffmpeg by scripts/prepare-resources.mjs.
+function ytDlpExeName(): string {
+  return process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp";
 }
 
 // Resolves once `url` answers 2xx. Rejects early if `proc` exits first (e.g.
@@ -82,6 +87,7 @@ export async function startBackend(settings: AppSettings): Promise<ChildProcess>
   const res = resourcesPath();
   const backendExe = path.join(res, backendDirName(), backendExeName());
   const ffmpegExe = path.join(res, ffmpegDirName(), ffmpegExeName());
+  const ytDlpExe = path.join(res, ffmpegDirName(), ytDlpExeName());
   const userData = app.getPath("userData");
   mkdirSync(settings.downloadFolder, { recursive: true });
 
@@ -96,6 +102,12 @@ export async function startBackend(settings: AppSettings): Promise<ChildProcess>
       Storage__DownloadsPath: settings.downloadFolder,
       Database__Path: path.join(userData, "ytpd.db"),
       Ffmpeg__Path: ffmpegExe,
+      // yt-dlp first, YoutubeExplode as fallback. A build without a
+      // bundled yt-dlp goes straight to YoutubeExplode instead of failing
+      // to spawn yt-dlp for every video.
+      ...(existsSync(ytDlpExe)
+        ? { Downloader__YtDlpPath: ytDlpExe }
+        : { Downloader__PrimaryEngine: "YoutubeExplode", Downloader__EnableFallback: "false" }),
       Cors__AllowedOrigin: `http://127.0.0.1:${FRONTEND_PORT}`,
     },
     stdio: "pipe",

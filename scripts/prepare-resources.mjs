@@ -24,12 +24,13 @@ if (!existsSync(backendProj) || !existsSync(frontendRoot)) {
 
 // Each target: { rid: dotnet RID, dirSuffix: matches sidecar.ts's backendDirName(),
 // ffmpegEnv: which env var supplies that platform's static ffmpeg binary,
-// ffmpegExeName: filename to copy it as, exeName: published binary's filename }
+// ffmpegExeName: filename to copy it as, exeName: published binary's filename,
+// ytDlpEnv/ytDlpExeName: same for the yt-dlp binary, bundled next to ffmpeg }
 const PLATFORM_TARGETS = {
-  win: { rid: "win-x64", dirSuffix: "win", ffmpegEnv: "YTPD_FFMPEG_WIN", ffmpegExeName: "ffmpeg.exe", exeName: "YtpdWeb.Api.exe" },
-  linux: { rid: "linux-x64", dirSuffix: "linux", ffmpegEnv: "YTPD_FFMPEG_LINUX", ffmpegExeName: "ffmpeg", exeName: "YtpdWeb.Api" },
-  "osx-x64": { rid: "osx-x64", dirSuffix: "osx-x64", ffmpegEnv: "YTPD_FFMPEG_OSX_X64", ffmpegExeName: "ffmpeg", exeName: "YtpdWeb.Api" },
-  "osx-arm64": { rid: "osx-arm64", dirSuffix: "osx-arm64", ffmpegEnv: "YTPD_FFMPEG_OSX_ARM64", ffmpegExeName: "ffmpeg", exeName: "YtpdWeb.Api" },
+  win: { rid: "win-x64", dirSuffix: "win", ffmpegEnv: "YTPD_FFMPEG_WIN", ffmpegExeName: "ffmpeg.exe", exeName: "YtpdWeb.Api.exe", ytDlpEnv: "YTPD_YTDLP_WIN", ytDlpExeName: "yt-dlp.exe" },
+  linux: { rid: "linux-x64", dirSuffix: "linux", ffmpegEnv: "YTPD_FFMPEG_LINUX", ffmpegExeName: "ffmpeg", exeName: "YtpdWeb.Api", ytDlpEnv: "YTPD_YTDLP_LINUX", ytDlpExeName: "yt-dlp" },
+  "osx-x64": { rid: "osx-x64", dirSuffix: "osx-x64", ffmpegEnv: "YTPD_FFMPEG_OSX_X64", ffmpegExeName: "ffmpeg", exeName: "YtpdWeb.Api", ytDlpEnv: "YTPD_YTDLP_OSX", ytDlpExeName: "yt-dlp" },
+  "osx-arm64": { rid: "osx-arm64", dirSuffix: "osx-arm64", ffmpegEnv: "YTPD_FFMPEG_OSX_ARM64", ffmpegExeName: "ffmpeg", exeName: "YtpdWeb.Api", ytDlpEnv: "YTPD_YTDLP_OSX", ytDlpExeName: "yt-dlp" },
 };
 
 const requested = (process.env.YTPD_PLATFORMS || "win").split(",").map((s) => s.trim());
@@ -69,6 +70,18 @@ for (const key of requested) {
   const dest = path.join(ffmpegOut, t.ffmpegExeName);
   cpSync(localFfmpeg, dest);
   if (process.platform !== "win32") chmodSync(dest, 0o755);
+
+  // Optional: without it the app runs YoutubeExplode-only (see sidecar.ts).
+  const localYtDlp = process.env[t.ytDlpEnv];
+  const ytDlpDest = path.join(ffmpegOut, t.ytDlpExeName);
+  rmSync(ytDlpDest, { force: true });
+  if (localYtDlp && existsSync(localYtDlp)) {
+    console.log(`== Bundling yt-dlp for ${key} ==`);
+    cpSync(localYtDlp, ytDlpDest);
+    if (process.platform !== "win32") chmodSync(ytDlpDest, 0o755);
+  } else {
+    console.warn(`!! ${t.ytDlpEnv} not set - building ${key} without yt-dlp (YoutubeExplode only)`);
+  }
 }
 
 console.log("== Building frontend (desktop API URL baked in, auth off) ==");

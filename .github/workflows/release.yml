@@ -113,6 +113,23 @@ jobs:
           esac
           echo "$VAR=$FFMPEG_BIN" >> "$GITHUB_ENV"
 
+      # yt-dlp's standalone release binaries (no Python needed): the
+      # backend's primary download engine, with YoutubeExplode as fallback.
+      # Latest release each build, since yt-dlp tracks YouTube changes.
+      - name: Fetch yt-dlp
+        shell: bash
+        run: |
+          case "${{ matrix.platforms }}" in
+            win) ASSET=yt-dlp.exe; VAR=YTPD_YTDLP_WIN ;;
+            linux) ASSET=yt-dlp_linux; VAR=YTPD_YTDLP_LINUX ;;
+            osx-*) ASSET=yt-dlp_macos; VAR=YTPD_YTDLP_OSX ;;
+          esac
+          DEST="$RUNNER_TEMP/yt-dlp-bin/$ASSET"
+          mkdir -p "$(dirname "$DEST")"
+          curl -fsSL -o "$DEST" "https://github.com/yt-dlp/yt-dlp/releases/latest/download/$ASSET"
+          chmod +x "$DEST"
+          echo "$VAR=$DEST" >> "$GITHUB_ENV"
+
       - name: Install desktop dependencies
         working-directory: ytpd-desktop
         run: npm ci
